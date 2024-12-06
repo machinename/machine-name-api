@@ -1,0 +1,7 @@
+node_modules/
+server.ts
+tsconfig.json
+
+.env
+.gitignore
+.gcloudignore
