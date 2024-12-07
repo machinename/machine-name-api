@@ -12,17 +12,17 @@ admin.initializeApp({
 });
 
 // CORS configuration to allow requests from the login domain
-// const corsOptions = {
-//     origin: [
-//         'https://machinename.dev',
-//         'https://account.machinename.dev',
-//         'https://login.machinename.dev'
-//     ],
-//     methods: ['GET', 'POST'],
-//     credentials: true,
-// };
+const corsOptions = {
+    origin: [
+        'https://machinename.dev',
+        'https://account.machinename.dev',
+        'https://login.machinename.dev'
+    ],
+    methods: ['GET', 'POST'],
+    credentials: true,
+};
 
-// app.use(cors(corsOptions));
+app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json());
 
