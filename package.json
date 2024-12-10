@@ -1,14 +1,14 @@
 {
-  "name": "services-machine-name",
+  "name": "machine-name-auth",
   "version": "1.0.0",
-  "description": "Machine Name Services",
+  "description": "Machine Name Auth",
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev server.ts"
   },
   "keywords": [],
-  "author": "",
+  "author": "Machine Name",
   "license": "ISC",
   "dependencies": {
     "cookie-parser": "^1.4.7",
