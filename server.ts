@@ -52,11 +52,11 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
             domain: '.machinename.dev',
             maxAge: 60 * 60 * 1000, // 1 Hour
             // maxAge: 7 * 24 * 60 * 60 * 1000, // 7 Days
-            httpOnly: true,
+            // httpOnly: true,
             secure: true,
             sameSite: 'none',
         });
-        
+
         res.status(200).json({ message: 'Login successful' });
     } catch (error) {
         const errorMessage = (error as Error).message;
