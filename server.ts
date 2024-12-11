@@ -56,7 +56,6 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
             secure: true,
             sameSite: 'none',
         });
-
         res.status(200).json({ message: 'Login successful' });
     } catch (error) {
         const errorMessage = (error as Error).message;
