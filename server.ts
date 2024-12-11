@@ -50,7 +50,8 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         const customToken = await admin.auth().createCustomToken(isVerified.uid);
         res.cookie('MNFBCT', customToken, {
             domain: '.machinename.dev',
-            maxAge: 60 * 60 * 1000, // 1 Hour
+            maxAge: 60 * 1000 * 2, // 2 Minute
+            // maxAge: 60 * 60 * 1000, // 1 Hour
             // maxAge: 7 * 24 * 60 * 60 * 1000, // 7 Days
             // httpOnly: true,
             secure: true,
