@@ -39,29 +39,46 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
     const idToken = req.body.idToken;
     if (!idToken) {
         res.status(400).json({ message: 'ID Token Required' });
-        return;
     }
     try {
-        const isVerified = await admin.auth().verifyIdToken(idToken);
-        if (!isVerified) {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        if (!decodedToken) {
             res.status(401).json({ message: 'Unauthorized' });
-            return;
+            return; 
         }
-        const customToken = await admin.auth().createCustomToken(isVerified.uid);
-        res.cookie('MNFBCT', customToken, {
-            domain: '.machinename.dev',
-            maxAge: 60 * 1000 * 2, // 2 Minute
-            // maxAge: 60 * 60 * 1000, // 1 Hour
-            // maxAge: 7 * 24 * 60 * 60 * 1000, // 7 Days
-            // httpOnly: true,
-            secure: true,
-            sameSite: 'none',
+        const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn: 60 * 60 * 24 * 5 * 1000 });
+        res.cookie('session', sessionCookie, {
+            domain: 'machinename.dev',
+            maxAge: 60 * 60 * 24 * 5 * 1000,  // 5 days
+            httpOnly: true, 
+            secure: true,  
         });
         res.status(200).json({ message: 'Login successful' });
     } catch (error) {
         const errorMessage = (error as Error).message;
-        res.status(401).json({ message: 'Unauthorized', error: errorMessage });
+        res.status(401).json({ message: 'Unauthorized', error: 'Invalid token or session creation failure' });
         console.error('Error Verifying ID Token:', error);
+    }
+});
+
+app.post('/logout', (req: Request, res: Response): void => {
+    res.clearCookie('session');
+    res.status(200).json({ message: 'Logout successful' });
+});
+
+app.post('/verify', async (req: Request, res: Response): Promise<void> => {
+    const sessionCookie = req.cookies.session;
+    if (!sessionCookie) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+    }
+    try {
+        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
+        res.status(200).json({ message: 'Session Verified', decodedClaims });
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(401).json({ message: 'Unauthorized', error: errorMessage });
+        console.error('Error Verifying Session Cookie:', error);
     }
 });
 
