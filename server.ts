@@ -13,7 +13,6 @@ admin.initializeApp({
 
 const corsOptions = {
     origin: [
-        'https://account.machinename.dev',
         'https://idea.machinename.dev',
         'https://login.machinename.dev',
         'https://machinename.dev',
