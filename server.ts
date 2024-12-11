@@ -46,39 +46,18 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
             res.status(401).json({ message: 'Unauthorized' });
             return; 
         }
-        const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn: 60 * 60 * 24 * 5 * 1000 });
-        res.cookie('session', sessionCookie, {
+        const customToken = await admin.auth().createCustomToken(decodedToken.uid);
+        res.cookie('SNMNCT', customToken, {
             domain: 'machinename.dev',
-            maxAge: 60 * 60 * 24 * 5 * 1000,  // 5 days
-            httpOnly: true, 
-            secure: true,  
+            maxAge: 60 * 60 * 1000, // 1 hour
+            // httpOnly: true, 
+            secure: true,
+            sameSite: 'none',
         });
-        res.status(200).json({ message: 'Login successful' });
+        res.status(200).json({ message: 'Login successful'});
     } catch (error) {
-        const errorMessage = (error as Error).message;
         res.status(401).json({ message: 'Unauthorized', error: 'Invalid token or session creation failure' });
         console.error('Error Verifying ID Token:', error);
-    }
-});
-
-app.post('/logout', (req: Request, res: Response): void => {
-    res.clearCookie('session');
-    res.status(200).json({ message: 'Logout successful' });
-});
-
-app.post('/verify', async (req: Request, res: Response): Promise<void> => {
-    const sessionCookie = req.cookies.session;
-    if (!sessionCookie) {
-        res.status(401).json({ message: 'Unauthorized' });
-        return;
-    }
-    try {
-        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
-        res.status(200).json({ message: 'Session Verified', decodedClaims });
-    } catch (error) {
-        const errorMessage = (error as Error).message;
-        res.status(401).json({ message: 'Unauthorized', error: errorMessage });
-        console.error('Error Verifying Session Cookie:', error);
     }
 });
 
