@@ -48,7 +48,7 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         const customToken = await admin.auth().createCustomToken(decodedToken.uid);
         res.cookie('SNMNCT', customToken, {
             domain: 'machinename.dev',
-            maxAge: 60 * 60 * 1000, // 1 hour
+            maxAge: 60 * 60 * 1000 * 24 * 5, // 5 days
             // httpOnly: true, 
             secure: true,
             sameSite: 'none',
