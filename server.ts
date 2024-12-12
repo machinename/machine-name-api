@@ -1,8 +1,8 @@
-import express, { Request, Response } from 'express';
-import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
-import serviceAccount from './serviceAccountKey.json';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import express, { Request, Response } from 'express';
+import serviceAccount from './serviceAccountKey.json';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -13,7 +13,6 @@ admin.initializeApp({
 
 const corsOptions = {
     origin: [
-        'https://idea.machinename.dev',
         'https://login.machinename.dev',
         'https://machinename.dev',
         'https://www.machinename.dev',
@@ -31,7 +30,7 @@ app.use((req: Request, res: Response, next: Function) => {
 });
 
 app.get('/', (req: Request, res: Response) => {
-    res.send('<h1>Machine Name Auth</h1>');
+    res.send('<h1>Machine Name API</h1>');
 });
 
 app.post('/login', async (req: Request, res: Response): Promise<void> => {
@@ -48,7 +47,7 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         const customToken = await admin.auth().createCustomToken(decodedToken.uid);
         res.cookie('SNMNCT', customToken, {
             domain: 'machinename.dev',
-            maxAge: 60 * 60 * 1000 * 24 * 5, // 5 days
+            maxAge: 60 * 60 * 1000 * 24 * 7, // 7 days
             // httpOnly: true, 
             secure: true,
             sameSite: 'none',

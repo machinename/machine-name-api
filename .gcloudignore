@@ -1,7 +1,7 @@
-node_modules/
-server.ts
-tsconfig.json
-
+.DS_Store
 .env
 .gitignore
 .gcloudignore
+node_modules/
+server.ts
+tsconfig.json
