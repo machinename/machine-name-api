@@ -13,7 +13,7 @@ admin.initializeApp({
 
 const corsOptions = {
     origin: [
-        'https://login.machinename.dev',
+        'https://api.machinename.dev',
         'https://machinename.dev',
         'https://www.machinename.dev',
     ],
@@ -35,6 +35,7 @@ app.get('/', (req: Request, res: Response) => {
 
 app.post('/login', async (req: Request, res: Response): Promise<void> => {
     const idToken = req.body.idToken;
+    const expiresIn = 60 * 60 * 24 * 5 * 1000; // 5 days
     if (!idToken) {
         res.status(400).json({ message: 'ID Token Required' });
     }
@@ -42,20 +43,43 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         if (!decodedToken) {
             res.status(401).json({ message: 'Unauthorized' });
-            return; 
+            return;
         }
-        const customToken = await admin.auth().createCustomToken(decodedToken.uid);
-        res.cookie('SNMNCT', customToken, {
-            domain: 'machinename.dev',
-            maxAge: 60 * 60 * 1000 * 24 * 7, // 7 days
-            // httpOnly: true, 
+
+        // Create a custom token
+        // const customToken = await admin.auth().createCustomToken(decodedToken.uid);
+        // res.cookie('MNCT', customToken, {
+        //     domain: 'machinename.dev',
+        //     maxAge: expiresIn
+        //     // httpOnly: true, 
+        //     secure: true,
+        //     sameSite: 'none',
+        // });
+        // res.status(200).json({ message: 'Custom token set successfully' });
+
+        // Create a session cookie
+        const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
+        res.cookie('MNSC', sessionCookie, {
+            maxAge: expiresIn,
+            httpOnly: true,
             secure: true,
             sameSite: 'none',
         });
-        res.status(200).json({ message: 'Login successful'});
+        res.status(200).json({ message: 'Session cookie set successfully' });
     } catch (error) {
         res.status(401).json({ message: 'Unauthorized', error: 'Invalid token or session creation failure' });
         console.error('Error Verifying ID Token:', error);
+    }
+});
+
+app.get('/verfiy', async (req, res) => {
+    const sessionCookie = req.cookies.MNSC || '';
+    try {
+        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
+        res.status(200).send(decodedClaims);
+    } catch (error) {
+        console.error('Error verifying session cookie:', error);
+        res.status(401).send({ message: 'Unauthorized', error });
     }
 });
 
