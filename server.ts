@@ -2,17 +2,30 @@ import admin from 'firebase-admin';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
+import helmet from 'helmet';
+import Joi from 'joi';
+import winston from 'winston';
 import serviceAccount from './serviceAccountKey.json';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
 const port = process.env.PORT || 8080;
 
+// Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
 });
 
+// Logger setup using Winston
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    transports: [new winston.transports.Console()],
+});
+
+// CORS configuration
 const corsOptions = {
-    origin: [
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
         'https://machinename.dev',
         'https://api.machinename.dev',
         'https://login.machinename.dev',
@@ -22,24 +35,59 @@ const corsOptions = {
     credentials: true,
 };
 
+// Create a rate limiter
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+    standardHeaders: 'draft-8', // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+    // store: ... , // Redis, Memcached, etc. See below.
+});
+
 app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json());
+app.use(
+    helmet.hsts({
+        maxAge: 31536000, // 1 year in seconds
+        includeSubDomains: true,
+        preload: true,
+    })
+);
+app.use(limiter);
+
+// Middleware to log requests
 app.use((req: Request, res: Response, next: Function) => {
-    console.log(`Request method: ${req.method}, URL: ${req.url}`);
+    logger.info(`Request method: ${req.method}, URL: ${req.url}`);
     next();
 });
 
+// Validation schema
+const idTokenSchema = Joi.object({
+    idToken: Joi.string()
+        .required()
+        .min(1000)  // Minimum length, based on Firebase token size (you can adjust this based on actual token length)
+        .max(2000)  // Maximum length, can be adjusted accordingly
+        .pattern(/^[A-Za-z0-9\-._~\+\/]+=*$/)  // JWT characters allowed in the token
+        .message('Invalid token format')  // Custom error message
+});
+
+// Routes
 app.get('/', (req: Request, res: Response) => {
     res.send('<h1>Machine Name API</h1>');
 });
 
 app.post('/login', async (req: Request, res: Response): Promise<void> => {
-    const idToken = req.body.idToken;
-    const expiresIn = 60 * 60 * 24 * 5 * 1000; // 5 days
-    if (!idToken) {
-        res.status(400).json({ message: 'ID Token Required' });
+    const { error } = idTokenSchema.validate(req.body);
+    if (error) {
+        logger.error('Validation error: ', error.details);
+        res.status(400).json({ message: 'Invalid input', error: error.details });
+        return;
     }
+
+    const idToken = req.body.idToken;
+    const expiresIn = 60 * 60 * 24 * 5 * 1000;
+
     try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         if (!decodedToken) {
@@ -47,18 +95,6 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // Create a custom token
-        // const customToken = await admin.auth().createCustomToken(decodedToken.uid);
-        // res.cookie('MNCT', customToken, {
-        //     domain: 'machinename.dev',
-        //     maxAge: expiresIn
-        //     // httpOnly: true, 
-        //     secure: true,
-        //     sameSite: 'none',
-        // });
-        // res.status(200).json({ message: 'Custom token set successfully' });
-
-        // Create a session cookie
         const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
         res.cookie('MNSC', sessionCookie, {
             domain: '.machinename.dev',
@@ -69,34 +105,62 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         });
         res.status(200).json({ message: 'Session cookie set successfully' });
     } catch (error) {
+        logger.error('Error Verifying ID Token:', error);
         res.status(401).json({ message: 'Unauthorized', error: 'Invalid token or session creation failure' });
-        console.error('Error Verifying ID Token:', error);
     }
 });
 
-app.get('/verfiy', async (req, res) => {
+app.get('/verify', async (req, res) => {
     const sessionCookie = req.cookies.MNSC || '';
     try {
         const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
         res.status(200).json(decodedClaims);
     } catch (error) {
-        console.error('Error verifying session cookie:', error);
+        logger.error('Error verifying session cookie:', error);
         res.status(401).json({ message: 'Unauthorized', error });
     }
 });
 
-const server = app.listen(port, () => {
-    console.log(`Server Is Running On Port ${port}`);
+app.get('/logout', (req, res) => {
+    try {
+        res.clearCookie('MNSC', {
+            domain: '.machinename.dev',
+            httpOnly: true,
+            secure: true,
+            sameSite: 'none',
+        });
+        res.status(200).json({ message: 'Logout successful' });
+    } catch (error) {
+        logger.error('Error clearing session cookie:', error);
+        res.status(500).json({ message: 'Internal Server Error', error });
+    }
 });
 
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+    res.status(200).json({ status: 'OK', timestamp: new Date() });
+});
+
+// Centralized error handler
+app.use((err: any, req: Request, res: Response, next: Function) => {
+    logger.error('Unhandled error: ', err);
+    res.status(500).json({ message: 'Internal Server Error', error: err.message });
+});
+
+// Start server
+const server = app.listen(port, () => {
+    logger.info(`Server is running on port ${port}`);
+});
+
+// Graceful shutdown
 process.on('SIGTERM', () => {
     server.close(() => {
-        console.log('HTTP Server Closed.');
+        logger.info('HTTP Server Closed.');
     });
 });
 
 process.on('SIGINT', () => {
     server.close(() => {
-        console.log('HTTP Server Closed.');
+        logger.info('HTTP Server Closed.');
     });
 });
