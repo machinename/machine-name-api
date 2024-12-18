@@ -13,8 +13,9 @@ admin.initializeApp({
 
 const corsOptions = {
     origin: [
-        'https://api.machinename.dev',
         'https://machinename.dev',
+        'https://api.machinename.dev',
+        'https://login.machinename.dev',
         'https://www.machinename.dev',
     ],
     methods: ['GET', 'POST'],
@@ -60,6 +61,7 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
         // Create a session cookie
         const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
         res.cookie('MNSC', sessionCookie, {
+            domain: '.machinename.dev',
             maxAge: expiresIn,
             httpOnly: true,
             secure: true,
@@ -76,10 +78,10 @@ app.get('/verfiy', async (req, res) => {
     const sessionCookie = req.cookies.MNSC || '';
     try {
         const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
-        res.status(200).send(decodedClaims);
+        res.status(200).json(decodedClaims);
     } catch (error) {
         console.error('Error verifying session cookie:', error);
-        res.status(401).send({ message: 'Unauthorized', error });
+        res.status(401).json({ message: 'Unauthorized', error });
     }
 });
 
@@ -88,14 +90,12 @@ const server = app.listen(port, () => {
 });
 
 process.on('SIGTERM', () => {
-    console.log('SIGTERM Signal Received. Closing HTTP Server.');
     server.close(() => {
         console.log('HTTP Server Closed.');
     });
 });
 
 process.on('SIGINT', () => {
-    console.log('SIGINT Signal Received. Closing HTTP Server.');
     server.close(() => {
         console.log('HTTP Server Closed.');
     });
