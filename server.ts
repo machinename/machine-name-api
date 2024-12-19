@@ -25,7 +25,7 @@ const logger = winston.createLogger({
 
 // CORS configuration
 const corsOptions = {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+    origin: [
         'https://machinename.dev',
         'https://api.machinename.dev',
         'https://login.machinename.dev',
@@ -35,6 +35,9 @@ const corsOptions = {
     credentials: true,
 };
 
+//
+app.set('trust proxy', true);
+
 // Create a rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -43,6 +46,7 @@ const limiter = rateLimit({
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
     // store: ... , // Redis, Memcached, etc. See below.
 });
+
 
 app.use(cors(corsOptions));
 app.use(cookieParser());
@@ -54,7 +58,7 @@ app.use(
         preload: true,
     })
 );
-app.use(limiter);
+// app.use(limiter);
 
 // Middleware to log requests
 app.use((req: Request, res: Response, next: Function) => {
@@ -72,7 +76,6 @@ const idTokenSchema = Joi.object({
         .message('Invalid token format')  // Custom error message
 });
 
-// Routes
 app.get('/', (req: Request, res: Response) => {
     res.send('<h1>Machine Name API</h1>');
 });
