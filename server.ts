@@ -83,18 +83,20 @@ app.get('/', (req: Request, res: Response) => {
 app.post('/login', async (req: Request, res: Response): Promise<void> => {
     const { error } = idTokenSchema.validate(req.body);
     if (error) {
-        logger.error('Validation error: ', error.details);
-        res.status(400).json({ message: 'Invalid input', error: error.details });
+        logger.error('Token Validation Error: ', error.details);
+        res.status(400).json('INVALID TOKEN');
         return;
     }
 
     const idToken = req.body.idToken;
+    const csrfToken = req.body.csrfToken;
     const expiresIn = 60 * 60 * 24 * 5 * 1000;
 
     try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        if (!decodedToken) {
-            res.status(401).json({ message: 'Unauthorized' });
+        // Guard against CSRF attacks.
+        if (csrfToken !== req.cookies.csrfToken) {
+            logger.error('CSRF Error: ', error);
+            res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
             return;
         }
 
@@ -106,48 +108,45 @@ app.post('/login', async (req: Request, res: Response): Promise<void> => {
             secure: true,
             sameSite: 'none',
         });
-        res.status(200).json({ message: 'Session cookie set successfully' });
+        res.status(200).json({ message: 'SUCCESS' });
     } catch (error) {
-        logger.error('Error Verifying ID Token:', error);
-        res.status(401).json({ message: 'Unauthorized', error: 'Invalid token or session creation failure' });
+        logger.error('Login Error: ', error);
+        res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
     }
 });
 
 app.get('/verify', async (req, res) => {
-    const sessionCookie = req.cookies.MNSC || '';
+    const sessionToken = req.cookies.MNSC || '';
     try {
-        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
+        const decodedClaims = await admin.auth().verifySessionCookie(sessionToken, true);
         res.status(200).json(decodedClaims);
     } catch (error) {
-        logger.error('Error verifying session cookie:', error);
-        res.status(401).json({ message: 'Unauthorized', error });
+        logger.error('Verify Error: ', error);
+        res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
     }
 });
 
-app.get('/logout', (req, res) => {
+app.get('/logout', async (req, res) => {
     try {
-        res.clearCookie('MNSC', {
-            domain: '.machinename.dev',
-            httpOnly: true,
-            secure: true,
-            sameSite: 'none',
-        });
-        res.status(200).json({ message: 'Logout successful' });
+        const sessionCookie = req.cookies.MNSC || '';
+        res.clearCookie('MNSC');
+        if (!sessionCookie) {
+            res.status(200).json({ message: 'LOGOUT SUCCESSFUL' });
+            return;
+        }
+
+        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
+        admin.auth().revokeRefreshTokens(decodedClaims.sub);
+        res.status(200).json({ message: 'LOGOUT SUCCESSFUL' });
     } catch (error) {
-        logger.error('Error clearing session cookie:', error);
-        res.status(500).json({ message: 'Internal Server Error', error });
+        logger.error('Logout Error', error);
+        res.status(500).json({ message: 'SERVER ERROR' });
     }
 });
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
     res.status(200).json({ status: 'OK', timestamp: new Date() });
-});
-
-// Centralized error handler
-app.use((err: any, req: Request, res: Response, next: Function) => {
-    logger.error('Unhandled error: ', err);
-    res.status(500).json({ message: 'Internal Server Error', error: err.message });
 });
 
 // Start server
