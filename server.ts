@@ -144,6 +144,28 @@ app.get('/logout', async (req, res) => {
     }
 });
 
+app.post('/passwordReset', async (req, res) => {
+    try {
+        const email = req.body.email;
+        await admin.auth().generatePasswordResetLink(email);
+        res.status(200).json({ message: 'RESET EMAIL SENT' });
+    } catch (error) {
+        logger.error('Reset Password Error: ', error);
+        res.status(500).json({ message: 'SERVER ERROR' });
+    }
+});
+
+app.post('/emailVerification', async (req, res) => {
+    try {
+        const email = req.body.email;
+        await admin.auth().generateEmailVerificationLink(email);
+        res.status(200).json({ message: 'RESET EMAIL SENT' });
+    } catch (error) {
+        logger.error('Reset Password Error: ', error);
+        res.status(500).json({ message: 'SERVER ERROR' });
+    }
+});
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
     res.status(200).json({ status: 'OK', timestamp: new Date() });
