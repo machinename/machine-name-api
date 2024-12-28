@@ -1,12 +1,13 @@
 import admin from 'firebase-admin';
-import cookieParser from 'cookie-parser';
+// import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
-import Joi from 'joi';
 import winston from 'winston';
 import serviceAccount from './serviceAccountKey.json';
 import rateLimit from 'express-rate-limit';
+import bodyParser from 'body-parser';
+import Project from './models/project';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -15,6 +16,9 @@ const port = process.env.PORT || 8080;
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
 });
+
+// Initialize Firestore database
+export const firestore = admin.firestore();
 
 // Logger setup using Winston
 const logger = winston.createLogger({
@@ -26,30 +30,29 @@ const logger = winston.createLogger({
 // CORS configuration
 const corsOptions = {
     origin: [
+        'http://localhost:3000',
         'https://machinename.dev',
         'https://api.machinename.dev',
-        'https://login.machinename.dev',
         'https://www.machinename.dev',
     ],
-    methods: ['GET', 'POST'],
-    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    // credentials: true,
 };
 
 //
-app.set('trust proxy', true);
+// app.set('trust proxy', true);
 
 // Create a rate limiter
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
-    standardHeaders: 'draft-8', // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
-    // store: ... , // Redis, Memcached, etc. See below.
-});
-
+// const limiter = rateLimit({
+//     windowMs: 15 * 60 * 1000, // 15 minutes
+//     limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+//     standardHeaders: 'draft-8', // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+//     legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+//     // store: ... , // Redis, Memcached, etc. See below.
+// });
 
 app.use(cors(corsOptions));
-app.use(cookieParser());
+// app.use(cookieParser());
 app.use(express.json());
 app.use(
     helmet.hsts({
@@ -59,115 +62,71 @@ app.use(
     })
 );
 // app.use(limiter);
+const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const token = req.headers.authorization?.split('Bearer ')[1];
 
-// Middleware to log requests
-app.use((req: Request, res: Response, next: Function) => {
-    logger.info(`Request method: ${req.method}, URL: ${req.url}`);
-    next();
-});
-
-// Validation schema
-const idTokenSchema = Joi.object({
-    idToken: Joi.string()
-        .required()
-        .min(1000)  // Minimum length, based on Firebase token size (you can adjust this based on actual token length)
-        .max(2000)  // Maximum length, can be adjusted accordingly
-        .pattern(/^[A-Za-z0-9\-._~\+\/]+=*$/)  // JWT characters allowed in the token
-        .message('Invalid token format')  // Custom error message
-});
-
-app.get('/', (req: Request, res: Response) => {
-    res.send('<h1>Machine Name API</h1>');
-});
-
-app.post('/login', async (req: Request, res: Response): Promise<void> => {
-    const { error } = idTokenSchema.validate(req.body);
-    if (error) {
-        logger.error('Token Validation Error: ', error.details);
-        res.status(400).json('INVALID TOKEN');
+    if (!token) {
+        res.status(401).json({ message: 'Unauthorized: No token provided' });
         return;
     }
 
-    const idToken = req.body.idToken;
-    const csrfToken = req.body.csrfToken;
-    const expiresIn = 60 * 60 * 24 * 5 * 1000;
-
     try {
-        // Guard against CSRF attacks.
-        if (csrfToken !== req.cookies.csrfToken) {
-            logger.error('CSRF Error: ', error);
-            res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        req.body.user = decodedToken; 
+        next();
+    } catch (error) {
+        logger.error(`Error verifying Firebase token: ${error}`);
+        res.status(401).json({ message: 'Unauthorized: Invalid token' });
+    }
+};
+
+interface ProjectData {
+    name: string;
+    description?: string;
+    starred?: boolean;
+    models?: any[];
+}
+
+app.post('/projects', authenticate, async (req: Request, res: Response): Promise<void> => {
+    try {
+
+        const project = JSON.parse(req.body.project);
+
+        if (!project) {
+            res.status(400).json({ message: 'Bad Request: Project data is required' });
             return;
         }
 
-        const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
-        res.cookie('MNSC', sessionCookie, {
-            domain: '.machinename.dev',
-            maxAge: expiresIn,
-            httpOnly: true,
-            secure: true,
-            sameSite: 'none',
-        });
-        res.status(200).json({ message: 'SUCCESS' });
-    } catch (error) {
-        logger.error('Login Error: ', error);
-        res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
-    }
-});
-
-app.get('/verify', async (req, res) => {
-    const sessionToken = req.cookies.MNSC || '';
-    try {
-        const decodedClaims = await admin.auth().verifySessionCookie(sessionToken, true);
-        res.status(200).json(decodedClaims);
-    } catch (error) {
-        logger.error('Verify Error: ', error);
-        res.status(401).json({ message: 'UNAUTHORIZED REQUEST' });
-    }
-});
-
-app.get('/logout', async (req, res) => {
-    try {
-        const sessionCookie = req.cookies.MNSC || '';
-        res.clearCookie('MNSC');
-        if (!sessionCookie) {
-            res.status(200).json({ message: 'LOGOUT SUCCESSFUL' });
+        if (!project.name) {
+            res.status(400).json({ message: 'Bad Request: Project name is required' });
             return;
         }
 
-        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
-        admin.auth().revokeRefreshTokens(decodedClaims.sub);
-        res.status(200).json({ message: 'LOGOUT SUCCESSFUL' });
-    } catch (error) {
-        logger.error('Logout Error', error);
-        res.status(500).json({ message: 'SERVER ERROR' });
-    }
-});
+        console.log(project);
 
-app.post('/passwordReset', async (req, res) => {
-    try {
-        const email = req.body.email;
-        await admin.auth().generatePasswordResetLink(email);
-        res.status(200).json({ message: 'RESET EMAIL SENT' });
-    } catch (error) {
-        logger.error('Reset Password Error: ', error);
-        res.status(500).json({ message: 'SERVER ERROR' });
-    }
-});
+        // Create project in Firestore under userId and projects sub-collection
+        const userId = req.body.user.uid; // Get user ID from decoded token
+        const newProjectRef = firestore.collection('users').doc(userId).collection('projects').doc(); // Generate unique project ID
 
-app.post('/emailVerification', async (req, res) => {
-    try {
-        const email = req.body.email;
-        await admin.auth().generateEmailVerificationLink(email);
-        res.status(200).json({ message: 'RESET EMAIL SENT' });
+        const newProject = new Project(
+            newProjectRef.id.toString(),
+            project.name,
+            project.description,
+            Date.now().toString(),
+            project.starred,
+            project.mlModels || []
+        );
+
+        await newProjectRef.create(JSON.parse(newProject.toJSON()));
+        res.status(201).json({ message: 'Project created successfully'});
     } catch (error) {
-        logger.error('Reset Password Error: ', error);
-        res.status(500).json({ message: 'SERVER ERROR' });
+        console.error('Error creating project:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', authenticate, (req: Request, res: Response) => {
     res.status(200).json({ status: 'OK', timestamp: new Date() });
 });
 
